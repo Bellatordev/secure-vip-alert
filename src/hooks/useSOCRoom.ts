@@ -28,6 +28,10 @@ export function useSOCRoom() {
   const [activeSpeaker, setActiveSpeaker] = useState<Speaker | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   
+  // Voice settings
+  const [selectedVoice, setSelectedVoice] = useState('alloy');
+  const [volume, setVolume] = useState(80);
+  
   const threadId = useRef(uuidv4());
   
   const updateTeamMemberStatus = useCallback((id: Speaker, status: TeamMember['status']) => {
@@ -196,6 +200,8 @@ export function useSOCRoom() {
     teamMembers,
     activeSpeaker,
     isThinking,
+    selectedVoice,
+    volume,
     
     // Actions
     connect,
@@ -206,5 +212,7 @@ export function useSOCRoom() {
     toggleVoiceMode,
     uploadImage,
     sendTextMessage,
+    setSelectedVoice,
+    setVolume,
   };
 }
