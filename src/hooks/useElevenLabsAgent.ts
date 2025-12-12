@@ -1,6 +1,5 @@
 import { useConversation } from '@elevenlabs/react';
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 
 const AGENT_ID = 'NUS9FibgZiq7z8SN2kAB';
 
@@ -34,24 +33,12 @@ export function useElevenLabsAgent() {
       // Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Get signed URL from our edge function
-      const { data, error } = await supabase.functions.invoke('elevenlabs-token', {
-        body: { agentId: AGENT_ID },
-      });
+      console.log('Starting conversation with agent:', AGENT_ID);
 
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (!data?.signed_url) {
-        throw new Error('Failed to get signed URL');
-      }
-
-      console.log('Starting conversation with signed URL');
-
-      // Start the conversation with WebSocket
+      // Connect directly with agent ID (for public agents without auth requirement)
       await conversation.startSession({
-        signedUrl: data.signed_url,
+        agentId: AGENT_ID,
+        connectionType: 'websocket',
       });
 
       setTranscripts([]);
