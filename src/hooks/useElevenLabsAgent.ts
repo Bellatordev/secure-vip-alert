@@ -8,7 +8,7 @@ export const AGENT_IDS: Record<string, string> = {
   security: '8ZkqihGoJB7jFfKGItmC',
   travel: 'tOHPvScM78PdUdowBosh',
   researcher: '4ymemKuuugML4MTq91jt',
-  contacts: '',    // Add when available
+  contacts: 'sfaMjWKoJwWVh87EqeLn',
 };
 
 export function useElevenLabsAgent() {
