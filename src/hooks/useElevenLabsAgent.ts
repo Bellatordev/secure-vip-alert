@@ -29,9 +29,40 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
   const [currentAgent, setCurrentAgent] = useState<Speaker>('clientOfficer');
   const currentAgentRef = useRef<Speaker>('clientOfficer');
   const callbacksRef = useRef(callbacks);
+  const switchAgentRef = useRef<((agent: Speaker) => Promise<string | undefined>) | null>(null);
   callbacksRef.current = callbacks;
 
+  // Client tools that agents can call to transfer to other specialists
+  const clientTools = {
+    consult_security: async () => {
+      console.log('🔄 Agent requesting security specialist...');
+      await switchAgentRef.current?.('security');
+      return 'Transferred to security specialist';
+    },
+    consult_travel: async () => {
+      console.log('🔄 Agent requesting travel specialist...');
+      await switchAgentRef.current?.('travel');
+      return 'Transferred to travel specialist';
+    },
+    consult_researcher: async () => {
+      console.log('🔄 Agent requesting researcher...');
+      await switchAgentRef.current?.('researcher');
+      return 'Transferred to researcher';
+    },
+    consult_contacts: async () => {
+      console.log('🔄 Agent requesting contacts specialist...');
+      await switchAgentRef.current?.('contacts');
+      return 'Transferred to contacts specialist';
+    },
+    return_to_client_officer: async () => {
+      console.log('🔄 Returning to client officer...');
+      await switchAgentRef.current?.('clientOfficer');
+      return 'Returned to client officer';
+    },
+  };
+
   const conversation = useConversation({
+    clientTools,
     onConnect: () => {
       console.log('✅ Connected to ElevenLabs agent:', currentAgentRef.current);
       callbacksRef.current?.onAgentChange?.(currentAgentRef.current);
@@ -135,6 +166,9 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       throw error;
     }
   }, [conversation]);
+
+  // Store switchAgent ref for client tools to use
+  switchAgentRef.current = switchAgent;
 
   const stopConversation = useCallback(async () => {
     await conversation.endSession();
