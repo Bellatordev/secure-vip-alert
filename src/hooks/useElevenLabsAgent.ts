@@ -263,6 +263,26 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     },
   });
 
+  // Get signed URL from edge function
+  const getSignedUrl = useCallback(async (agentId: string): Promise<string> => {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ agentId }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to get signed URL');
+    }
+
+    const data = await response.json();
+    return data.signed_url;
+  }, []);
+
   const startConversation = useCallback(async (agentRole: Speaker = 'clientOfficer') => {
     const agentId = AGENT_IDS[agentRole];
     
@@ -284,11 +304,13 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('✅ Microphone permission granted');
 
-      console.log('🚀 Starting conversation with agent:', agentRole, '- ID:', agentId);
+      console.log('🔐 Getting signed URL for agent:', agentRole);
+      const signedUrl = await getSignedUrl(agentId);
+      console.log('✅ Got signed URL');
 
+      console.log('🚀 Starting conversation with agent:', agentRole);
       const conversationId = await conversation.startSession({
-        agentId: agentId,
-        connectionType: 'websocket',
+        signedUrl: signedUrl,
       });
       
       console.log('✅ Conversation started with ID:', conversationId);
@@ -301,7 +323,7 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     } finally {
       setIsConnecting(false);
     }
-  }, [conversation]);
+  }, [conversation, getSignedUrl]);
 
   const switchAgent = useCallback(async (agentRole: Speaker): Promise<string | undefined> => {
     const agentId = AGENT_IDS[agentRole];
@@ -323,11 +345,13 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     setCurrentAgent(agentRole);
     currentAgentRef.current = agentRole;
 
-    // Start new session with different agent
+    // Start new session with different agent using signed URL
     try {
+      console.log('🔐 Getting signed URL for agent:', agentRole);
+      const signedUrl = await getSignedUrl(agentId);
+      
       const conversationId = await conversation.startSession({
-        agentId: agentId,
-        connectionType: 'websocket',
+        signedUrl: signedUrl,
       });
       
       console.log('✅ Switched to agent:', agentRole, 'ID:', conversationId);
@@ -337,7 +361,7 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       console.error('❌ Failed to switch agent:', error);
       throw error;
     }
-  }, [conversation]);
+  }, [conversation, getSignedUrl]);
 
   // Store switchAgent ref for internal use
   switchAgentRef.current = switchAgent;
