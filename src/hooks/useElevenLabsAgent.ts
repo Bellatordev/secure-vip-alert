@@ -22,29 +22,6 @@ const AGENT_TRIGGERS: Record<string, string[]> = {
   medical: ['medical', 'health', 'doctor', 'hospital', 'injury', 'sick', 'medicine', 'first aid', 'ambulance', 'treatment'],
 };
 
-// Phrases that indicate uncertainty or need for help - trigger specialist consultation
-const UNCERTAINTY_PHRASES = [
-  "i'm not sure",
-  "i don't know",
-  "let me find out",
-  "unclear",
-  "need more information",
-  "complex situation",
-  "difficult to say",
-  "let me consult",
-  "get the team's input",
-  "beyond my expertise",
-  "specialist",
-  "need help with",
-  "require assistance",
-  "not my area",
-  "better equipped",
-  "expert opinion",
-  "let me get",
-  "bring in",
-  "defer to",
-];
-
 // Topic keywords to determine which specialist to consult
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   security: ['threat', 'danger', 'risk', 'attack', 'breach', 'cyber', 'safe', 'protect', 'weapon', 'hostile', 'suspicious', 'criminal', 'violence'],
@@ -72,45 +49,37 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcripts, setTranscripts] = useState<ConversationTranscript[]>([]);
   const [currentAgent, setCurrentAgent] = useState<Speaker>('clientOfficer');
-  const [userContext, setUserContext] = useState<string>('');
   const [isResearching, setIsResearching] = useState(false);
   const currentAgentRef = useRef<Speaker>('clientOfficer');
   const callbacksRef = useRef(callbacks);
-  const switchAgentRef = useRef<((agent: Speaker, context?: string) => Promise<string | undefined>) | null>(null);
+  const switchAgentRef = useRef<((agent: Speaker) => Promise<string | undefined>) | null>(null);
   const pendingConsultRef = useRef<Speaker | null>(null);
   const isConsultingRef = useRef(false);
   const consultQueueRef = useRef<Speaker[]>([]);
+  const conversationHistoryRef = useRef<string[]>([]); // Full thread for all agents
+  const userQueryRef = useRef<string>(''); // Original user query
   callbacksRef.current = callbacks;
 
-  // Detect uncertainty and need for specialist help
-  const detectUncertainty = useCallback((text: string): boolean => {
-    const lowerText = text.toLowerCase();
-    return UNCERTAINTY_PHRASES.some(phrase => lowerText.includes(phrase));
+  // Build full conversation context for agents
+  const getFullContext = useCallback((): string => {
+    const history = conversationHistoryRef.current;
+    if (history.length === 0) return '';
+    return `CONVERSATION THREAD:\n${history.join('\n')}\n\nOriginal query: ${userQueryRef.current}`;
   }, []);
 
-  // Determine the best specialist based on topic keywords in conversation
-  const detectBestSpecialist = useCallback((text: string, context: string): Speaker | null => {
-    const combinedText = `${text} ${context}`.toLowerCase();
-    
-    // Score each specialist based on keyword matches
-    const scores: Record<string, number> = {};
+  // Detect which specialists should be consulted based on conversation content
+  const detectRelevantSpecialists = useCallback((text: string): Speaker[] => {
+    const lowerText = text.toLowerCase();
+    const relevant: Speaker[] = [];
     
     for (const [agent, keywords] of Object.entries(TOPIC_KEYWORDS)) {
-      scores[agent] = keywords.filter(kw => combinedText.includes(kw)).length;
+      const matchCount = keywords.filter(kw => lowerText.includes(kw)).length;
+      if (matchCount >= 2) { // At least 2 keyword matches
+        relevant.push(agent as Speaker);
+      }
     }
     
-    // Find the specialist with the highest score
-    const bestAgent = Object.entries(scores).reduce((best, [agent, score]) => {
-      if (score > best.score) return { agent, score };
-      return best;
-    }, { agent: '', score: 0 });
-    
-    // Return the best match if score > 0, otherwise default to researcher
-    if (bestAgent.score > 0) {
-      return bestAgent.agent as Speaker;
-    }
-    
-    return null;
+    return relevant;
   }, []);
 
   // Detect if agent response suggests consulting another specialist
@@ -131,6 +100,8 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       'bring in',
       'defer to',
       'let me get',
+      'connecting you with',
+      'our specialist',
     ];
     
     const hasHandoffIntent = handoffPhrases.some(phrase => lowerText.includes(phrase));
@@ -152,15 +123,15 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     callbacksRef.current?.onResearchStarted?.();
     
     try {
-      const research = await queryResearch(query, userContext);
+      const research = await queryResearch(query, getFullContext());
       callbacksRef.current?.onResearchComplete?.(research);
       return research;
     } finally {
       setIsResearching(false);
     }
-  }, [userContext]);
+  }, [getFullContext]);
 
-  // Queue multiple agents for consultation (researcher + security when uncertain)
+  // Queue multiple agents for consultation
   const queueMultiAgentConsult = useCallback((agents: Speaker[]) => {
     consultQueueRef.current = [...agents];
     if (consultQueueRef.current.length > 0 && !isConsultingRef.current) {
@@ -174,10 +145,12 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       console.log('✅ Connected to ElevenLabs agent:', currentAgentRef.current);
       callbacksRef.current?.onAgentChange?.(currentAgentRef.current);
       
-      // If we're consulting and have context, send it to the new agent
-      if (isConsultingRef.current && userContext) {
+      // Send full conversation context to ALL agents so they can track the thread
+      const fullContext = getFullContext();
+      if (fullContext && currentAgentRef.current !== 'clientOfficer') {
         setTimeout(() => {
-          conversation.sendUserMessage(`Context from client officer: ${userContext}. Please provide your specialist assessment.`);
+          const contextMessage = `You are joining an ongoing DANGER ROOM consultation. Here is the full conversation thread:\n\n${fullContext}\n\nPlease provide your specialist perspective. If you notice something critical, speak up. After your assessment, the team will continue discussing.`;
+          conversation.sendUserMessage(contextMessage);
         }, 500);
       }
     },
@@ -193,58 +166,67 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
         speaker: payload.role === 'user' ? 'user' : currentAgentRef.current
       };
       
-      // Store user context for passing to specialists
-      if (payload.role === 'user') {
-        setUserContext(payload.message);
+      // Add to conversation history so all agents have context
+      const speakerName = payload.role === 'user' ? 'USER' : currentAgentRef.current.toUpperCase();
+      conversationHistoryRef.current.push(`[${speakerName}]: ${payload.message}`);
+      
+      // Store original user query
+      if (payload.role === 'user' && currentAgentRef.current === 'clientOfficer') {
+        userQueryRef.current = payload.message;
       }
       
       setTranscripts(prev => [...prev, transcript]);
       callbacksRef.current?.onTranscript?.(transcript);
       
-      // Check if Client Officer wants to consult another agent or is uncertain
-      if (payload.role !== 'user' && currentAgentRef.current === 'clientOfficer') {
-        const isUncertain = detectUncertainty(payload.message);
+      // Client Officer ALWAYS consults the team - never solves alone
+      if (payload.role !== 'user' && currentAgentRef.current === 'clientOfficer' && !isConsultingRef.current) {
+        // Detect which specialists are relevant to this conversation
+        const relevantSpecialists = detectRelevantSpecialists(getFullContext());
+        
+        // Check for explicit handoff
         const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
         
-        if (targetAgent && !isConsultingRef.current) {
-          // Explicit handoff detected
-          console.log('🎯 Detected explicit handoff to:', targetAgent);
+        if (targetAgent) {
+          console.log('🎯 Client Interface routing to:', targetAgent);
           pendingConsultRef.current = targetAgent;
-        } else if (isUncertain && !isConsultingRef.current) {
-          // Client Officer is uncertain - find the best specialist based on topic
-          const bestSpecialist = detectBestSpecialist(payload.message, userContext);
-          
-          if (bestSpecialist) {
-            console.log('🤔 Client Officer needs help - consulting:', bestSpecialist);
-            pendingConsultRef.current = bestSpecialist;
-            
-            // If it's the researcher, also do web research
-            if (bestSpecialist === 'researcher') {
-              performResearch(userContext).then(research => {
-                console.log('📚 Research completed:', research.substring(0, 100) + '...');
-              });
-            }
-          } else {
-            // No clear topic match - consult researcher first, then security
-            console.log('🤔 Client Officer uncertain - consulting researcher and security');
-            queueMultiAgentConsult(['researcher', 'security']);
-            
-            performResearch(userContext).then(research => {
-              console.log('📚 Research completed:', research.substring(0, 100) + '...');
-            });
-          }
+        } else if (relevantSpecialists.length > 0) {
+          // Consult all relevant specialists
+          console.log('👥 Consulting relevant specialists:', relevantSpecialists);
+          queueMultiAgentConsult(relevantSpecialists);
+        } else {
+          // Default: always consult at least researcher and security
+          console.log('👥 Default consultation: researcher and security');
+          queueMultiAgentConsult(['researcher', 'security']);
+        }
+        
+        // Start research in background
+        performResearch(userQueryRef.current).then(research => {
+          console.log('📚 Research completed:', research.substring(0, 100) + '...');
+        });
+      }
+      
+      // Check if other specialists should chime in based on new information
+      if (payload.role !== 'user' && currentAgentRef.current !== 'clientOfficer') {
+        const newRelevantSpecialists = detectRelevantSpecialists(payload.message);
+        const specialistsNotYetConsulted = newRelevantSpecialists.filter(
+          s => s !== currentAgentRef.current && !consultQueueRef.current.includes(s)
+        );
+        
+        if (specialistsNotYetConsulted.length > 0) {
+          console.log('💡 New specialists should chime in:', specialistsNotYetConsulted);
+          consultQueueRef.current.push(...specialistsNotYetConsulted);
         }
       }
       
-      // If a specialist finishes and there are more in queue, continue
+      // If a specialist finishes, continue with queue or return to Client Interface
       if (payload.role !== 'user' && currentAgentRef.current !== 'clientOfficer' && isConsultingRef.current) {
         if (consultQueueRef.current.length > 0) {
           const nextAgent = consultQueueRef.current.shift()!;
-          console.log('➡️ Moving to next specialist:', nextAgent);
+          console.log('➡️ Next specialist:', nextAgent);
           pendingConsultRef.current = nextAgent;
         } else {
-          // All specialists done, return to client officer
-          console.log('✅ All specialists consulted, returning to Client Officer');
+          // All specialists done, return to Client Interface to summarize
+          console.log('✅ All specialists consulted, returning to Client Interface');
           pendingConsultRef.current = 'clientOfficer';
         }
       }
@@ -287,6 +269,10 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       throw new Error(`No agent ID configured for role: ${agentRole}`);
     }
 
+    // Clear conversation history for new session
+    conversationHistoryRef.current = [];
+    userQueryRef.current = '';
+    
     setIsConnecting(true);
     setCurrentAgent(agentRole);
     currentAgentRef.current = agentRole;
@@ -351,18 +337,20 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     }
   }, [conversation]);
 
-  // Store switchAgent ref for client tools to use
+  // Store switchAgent ref for internal use
   switchAgentRef.current = switchAgent;
 
   const stopConversation = useCallback(async () => {
     await conversation.endSession();
+    conversationHistoryRef.current = [];
+    userQueryRef.current = '';
   }, [conversation]);
 
   const setVolume = useCallback((volume: number) => {
     conversation.setVolume({ volume: volume / 100 });
   }, [conversation]);
 
-  // Send a text message to the current agent (useful for context)
+  // Send a text message to the current agent
   const sendMessage = useCallback((text: string) => {
     if (conversation.status === 'connected') {
       conversation.sendUserMessage(text);
