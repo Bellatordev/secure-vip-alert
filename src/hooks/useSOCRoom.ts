@@ -16,6 +16,7 @@ const initialTeamMembers: TeamMember[] = [
   { id: 'travel', name: 'Travel Expert', role: 'Location Intel', icon: '🌍', status: 'idle', color: 'travel' },
   { id: 'researcher', name: 'Researcher', role: 'Real-time Info', icon: '🔎', status: 'idle', color: 'researcher' },
   { id: 'contacts', name: 'Contact Agent', role: 'Local Resources', icon: '📞', status: 'idle', color: 'contacts' },
+  { id: 'medical', name: 'Medical', role: 'Health & First Aid', icon: '❤️', status: 'idle', color: 'medical' },
 ];
 
 export function useSOCRoom() {
