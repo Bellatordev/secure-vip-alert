@@ -22,7 +22,7 @@ const AGENT_TRIGGERS: Record<string, string[]> = {
   medical: ['medical', 'health', 'doctor', 'hospital', 'injury', 'sick', 'medicine', 'first aid', 'ambulance', 'treatment'],
 };
 
-// Phrases that indicate uncertainty - trigger multi-agent consultation
+// Phrases that indicate uncertainty or need for help - trigger specialist consultation
 const UNCERTAINTY_PHRASES = [
   "i'm not sure",
   "i don't know",
@@ -33,7 +33,26 @@ const UNCERTAINTY_PHRASES = [
   "difficult to say",
   "let me consult",
   "get the team's input",
+  "beyond my expertise",
+  "specialist",
+  "need help with",
+  "require assistance",
+  "not my area",
+  "better equipped",
+  "expert opinion",
+  "let me get",
+  "bring in",
+  "defer to",
 ];
+
+// Topic keywords to determine which specialist to consult
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  security: ['threat', 'danger', 'risk', 'attack', 'breach', 'cyber', 'safe', 'protect', 'weapon', 'hostile', 'suspicious', 'criminal', 'violence'],
+  travel: ['travel', 'evacuation', 'transport', 'route', 'flight', 'location', 'embassy', 'leave', 'border', 'visa', 'airport', 'hotel', 'destination'],
+  researcher: ['research', 'background', 'intel', 'intelligence', 'history', 'analyze', 'information', 'data', 'report', 'news', 'situation'],
+  contacts: ['contact', 'authorities', 'emergency', 'call', 'reach', 'police', 'fire', 'rescue', 'local', 'government', 'agency'],
+  medical: ['medical', 'health', 'doctor', 'hospital', 'injury', 'sick', 'medicine', 'first aid', 'ambulance', 'treatment', 'illness', 'pain', 'wound', 'blood'],
+};
 
 export type ConversationTranscript = {
   role: 'user' | 'agent';
@@ -63,10 +82,35 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
   const consultQueueRef = useRef<Speaker[]>([]);
   callbacksRef.current = callbacks;
 
-  // Detect uncertainty and need for multi-agent consultation
+  // Detect uncertainty and need for specialist help
   const detectUncertainty = useCallback((text: string): boolean => {
     const lowerText = text.toLowerCase();
     return UNCERTAINTY_PHRASES.some(phrase => lowerText.includes(phrase));
+  }, []);
+
+  // Determine the best specialist based on topic keywords in conversation
+  const detectBestSpecialist = useCallback((text: string, context: string): Speaker | null => {
+    const combinedText = `${text} ${context}`.toLowerCase();
+    
+    // Score each specialist based on keyword matches
+    const scores: Record<string, number> = {};
+    
+    for (const [agent, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+      scores[agent] = keywords.filter(kw => combinedText.includes(kw)).length;
+    }
+    
+    // Find the specialist with the highest score
+    const bestAgent = Object.entries(scores).reduce((best, [agent, score]) => {
+      if (score > best.score) return { agent, score };
+      return best;
+    }, { agent: '', score: 0 });
+    
+    // Return the best match if score > 0, otherwise default to researcher
+    if (bestAgent.score > 0) {
+      return bestAgent.agent as Speaker;
+    }
+    
+    return null;
   }, []);
 
   // Detect if agent response suggests consulting another specialist
@@ -77,12 +121,21 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     if (fromAgent !== 'clientOfficer') return null;
     
     // Check for explicit handoff phrases
-    if (lowerText.includes('let me check with') || 
-        lowerText.includes('consult') || 
-        lowerText.includes("i'll ask") ||
-        lowerText.includes('transfer you to') ||
-        lowerText.includes('speak with our')) {
-      
+    const handoffPhrases = [
+      'let me check with',
+      'consult',
+      "i'll ask",
+      'transfer you to',
+      'speak with our',
+      'get our',
+      'bring in',
+      'defer to',
+      'let me get',
+    ];
+    
+    const hasHandoffIntent = handoffPhrases.some(phrase => lowerText.includes(phrase));
+    
+    if (hasHandoffIntent) {
       for (const [agent, keywords] of Object.entries(AGENT_TRIGGERS)) {
         if (keywords.some(kw => lowerText.includes(kw))) {
           return agent as Speaker;
@@ -151,21 +204,34 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       // Check if Client Officer wants to consult another agent or is uncertain
       if (payload.role !== 'user' && currentAgentRef.current === 'clientOfficer') {
         const isUncertain = detectUncertainty(payload.message);
+        const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
         
-        if (isUncertain && !isConsultingRef.current) {
-          // When uncertain, consult both researcher and security
-          console.log('🤔 Client Officer uncertain - consulting researcher and security');
-          queueMultiAgentConsult(['researcher', 'security']);
+        if (targetAgent && !isConsultingRef.current) {
+          // Explicit handoff detected
+          console.log('🎯 Detected explicit handoff to:', targetAgent);
+          pendingConsultRef.current = targetAgent;
+        } else if (isUncertain && !isConsultingRef.current) {
+          // Client Officer is uncertain - find the best specialist based on topic
+          const bestSpecialist = detectBestSpecialist(payload.message, userContext);
           
-          // First, do web research
-          performResearch(userContext).then(research => {
-            console.log('📚 Research completed:', research.substring(0, 100) + '...');
-          });
-        } else {
-          const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
-          if (targetAgent && !isConsultingRef.current) {
-            console.log('🎯 Detected handoff to:', targetAgent);
-            pendingConsultRef.current = targetAgent;
+          if (bestSpecialist) {
+            console.log('🤔 Client Officer needs help - consulting:', bestSpecialist);
+            pendingConsultRef.current = bestSpecialist;
+            
+            // If it's the researcher, also do web research
+            if (bestSpecialist === 'researcher') {
+              performResearch(userContext).then(research => {
+                console.log('📚 Research completed:', research.substring(0, 100) + '...');
+              });
+            }
+          } else {
+            // No clear topic match - consult researcher first, then security
+            console.log('🤔 Client Officer uncertain - consulting researcher and security');
+            queueMultiAgentConsult(['researcher', 'security']);
+            
+            performResearch(userContext).then(research => {
+              console.log('📚 Research completed:', research.substring(0, 100) + '...');
+            });
           }
         }
       }
