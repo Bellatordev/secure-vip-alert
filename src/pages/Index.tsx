@@ -17,6 +17,8 @@ const Index = () => {
     teamMembers,
     activeSpeaker,
     isThinking,
+    selectedVoice,
+    volume,
     connect,
     disconnect,
     activateSOS,
@@ -25,13 +27,21 @@ const Index = () => {
     toggleVoiceMode,
     uploadImage,
     sendTextMessage,
+    setSelectedVoice,
+    setVolume,
   } = useSOCRoom();
   
   const isConnected = connectionStatus === 'connected';
   
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Header connectionStatus={connectionStatus} />
+      <Header
+        connectionStatus={connectionStatus}
+        selectedVoice={selectedVoice}
+        onVoiceChange={setSelectedVoice}
+        volume={volume}
+        onVolumeChange={setVolume}
+      />
       
       {/* Main content area with padding for fixed header/footer */}
       <main className="flex-1 pt-14 pb-36">

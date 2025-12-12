@@ -1,12 +1,22 @@
-import { Shield, Settings } from "lucide-react";
+import { Shield } from "lucide-react";
 import { ConnectionStatus } from "@/types";
-import { cn } from "@/lib/utils";
+import { SettingsPanel } from "./SettingsPanel";
 
 interface HeaderProps {
   connectionStatus: ConnectionStatus;
+  selectedVoice: string;
+  onVoiceChange: (voiceId: string) => void;
+  volume: number;
+  onVolumeChange: (volume: number) => void;
 }
 
-export function Header({ connectionStatus }: HeaderProps) {
+export function Header({
+  connectionStatus,
+  selectedVoice,
+  onVoiceChange,
+  volume,
+  onVolumeChange,
+}: HeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-background-secondary/95 backdrop-blur-md border-b border-border">
       <div className="flex items-center gap-2">
@@ -17,9 +27,9 @@ export function Header({ connectionStatus }: HeaderProps) {
           SOC ROOM
         </span>
       </div>
-      
+
       <div className="flex items-center gap-3">
-        {connectionStatus === 'connected' && (
+        {connectionStatus === "connected" && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20">
             <div className="w-2 h-2 rounded-full bg-success pulse-live" />
             <span className="text-xs font-mono font-medium text-success uppercase tracking-wider">
@@ -27,8 +37,8 @@ export function Header({ connectionStatus }: HeaderProps) {
             </span>
           </div>
         )}
-        
-        {connectionStatus === 'connecting' && (
+
+        {connectionStatus === "connecting" && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-warning/10 border border-warning/20">
             <div className="w-2 h-2 rounded-full bg-warning animate-pulse" />
             <span className="text-xs font-mono font-medium text-warning uppercase tracking-wider">
@@ -36,15 +46,13 @@ export function Header({ connectionStatus }: HeaderProps) {
             </span>
           </div>
         )}
-        
-        <button 
-          className={cn(
-            "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-            "text-muted-foreground hover:text-foreground hover:bg-secondary"
-          )}
-        >
-          <Settings className="w-5 h-5" />
-        </button>
+
+        <SettingsPanel
+          selectedVoice={selectedVoice}
+          onVoiceChange={onVoiceChange}
+          volume={volume}
+          onVolumeChange={onVolumeChange}
+        />
       </div>
     </header>
   );
