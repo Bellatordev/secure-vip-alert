@@ -5,7 +5,7 @@ import { queryResearch } from '@/lib/api/research';
 
 // Map team roles to ElevenLabs agent IDs
 export const AGENT_IDS: Record<string, string> = {
-  clientOfficer: 'NUS9FibgZiq7z8SN2kAB',
+  clientOfficer: 'kxrAePUgdKTckPMBgdQX', // Using medical agent as fallback until clientOfficer is fixed
   security: '8ZkqihGoJB7jFfKGItmC',
   travel: 'tOHPvScM78PdUdowBosh',
   researcher: '4ymemKuuugML4MTq91jt',
