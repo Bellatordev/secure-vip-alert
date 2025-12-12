@@ -1,6 +1,6 @@
-import { Shield } from "lucide-react";
 import { ConnectionStatus } from "@/types";
 import { SettingsPanel } from "./SettingsPanel";
+import dangerRoomLogo from "@/assets/danger-room-logo.png";
 
 interface HeaderProps {
   connectionStatus: ConnectionStatus;
@@ -20,11 +20,13 @@ export function Header({
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-background-secondary/95 backdrop-blur-md border-b border-border">
       <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-gradient-gold flex items-center justify-center shadow-gold">
-          <Shield className="w-5 h-5 text-primary-foreground" />
-        </div>
+        <img 
+          src={dangerRoomLogo} 
+          alt="DANGER ROOM" 
+          className="w-9 h-9 object-contain"
+        />
         <span className="font-display font-bold text-lg tracking-tight text-foreground">
-          SOC ROOM
+          DANGER ROOM
         </span>
       </div>
 

@@ -1,7 +1,8 @@
-import { Shield, Radio, AlertTriangle, Lock, Globe, Users } from "lucide-react";
+import { Lock, Globe, Users } from "lucide-react";
 import { ConnectButton } from "./ConnectButton";
 import { SOSButton } from "./SOSButton";
 import { ConnectionStatus } from "@/types";
+import dangerRoomLogo from "@/assets/danger-room-logo.png";
 
 interface WelcomeScreenProps {
   connectionStatus: ConnectionStatus;
@@ -14,16 +15,18 @@ export function WelcomeScreen({ connectionStatus, onConnect, onSOS }: WelcomeScr
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)] px-6 py-8">
       {/* Hero */}
       <div className="text-center mb-8 animate-fade-in">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-gold flex items-center justify-center shadow-gold">
-          <Shield className="w-10 h-10 text-primary-foreground" />
-        </div>
+        <img 
+          src={dangerRoomLogo} 
+          alt="DANGER ROOM" 
+          className="w-24 h-24 mx-auto mb-6 object-contain drop-shadow-[0_0_30px_rgba(220,38,38,0.4)]"
+        />
         
-        <h1 className="font-display text-3xl font-bold text-foreground mb-3">
-          SOC Room
+        <h1 className="font-display text-3xl font-bold text-foreground mb-3 tracking-wide">
+          DANGER ROOM
         </h1>
         
         <p className="text-muted-foreground max-w-xs mx-auto leading-relaxed">
-          Your personal Special Operations Center. Expert security guidance on demand.
+          Your personal Security Operations Center. Expert security guidance on demand.
         </p>
       </div>
       
