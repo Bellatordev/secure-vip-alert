@@ -96,14 +96,17 @@ export function useSOCRoom() {
     return message;
   }, []);
   
-  const connect = useCallback(async (agentRole: Speaker = 'clientOfficer') => {
+  const connect = useCallback(async (agentRole?: Speaker | React.MouseEvent) => {
+    // Handle case where this is called from a button click (event passed) or directly
+    const role: Speaker = (typeof agentRole === 'string') ? agentRole : 'clientOfficer';
+    
     setConnectionStatus('connecting');
     
     try {
-      await elevenLabs.startConversation(agentRole);
+      await elevenLabs.startConversation(role);
       setConnectionStatus('connected');
-      updateTeamMemberStatus(agentRole, 'active');
-      setActiveSpeaker(agentRole);
+      updateTeamMemberStatus(role, 'active');
+      setActiveSpeaker(role);
     } catch (error) {
       console.error('Failed to connect:', error);
       setConnectionStatus('disconnected');
