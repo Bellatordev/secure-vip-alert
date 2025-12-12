@@ -1,5 +1,5 @@
 import { useConversation } from '@elevenlabs/react';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Speaker } from '@/types';
 
 // Map team roles to ElevenLabs agent IDs
@@ -9,6 +9,14 @@ export const AGENT_IDS: Record<string, string> = {
   travel: 'tOHPvScM78PdUdowBosh',
   researcher: '4ymemKuuugML4MTq91jt',
   contacts: 'sfaMjWKoJwWVh87EqeLn',
+};
+
+// Keywords that trigger agent switches
+const AGENT_TRIGGERS: Record<string, string[]> = {
+  security: ['security', 'threat', 'danger', 'risk', 'attack', 'breach', 'cyber'],
+  travel: ['travel', 'evacuation', 'transport', 'route', 'flight', 'location', 'embassy'],
+  researcher: ['research', 'background', 'intel', 'intelligence', 'history', 'analyze'],
+  contacts: ['contact', 'embassy', 'authorities', 'emergency', 'call', 'reach'],
 };
 
 export type ConversationTranscript = {
@@ -27,45 +35,49 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcripts, setTranscripts] = useState<ConversationTranscript[]>([]);
   const [currentAgent, setCurrentAgent] = useState<Speaker>('clientOfficer');
+  const [userContext, setUserContext] = useState<string>('');
   const currentAgentRef = useRef<Speaker>('clientOfficer');
   const callbacksRef = useRef(callbacks);
-  const switchAgentRef = useRef<((agent: Speaker) => Promise<string | undefined>) | null>(null);
+  const switchAgentRef = useRef<((agent: Speaker, context?: string) => Promise<string | undefined>) | null>(null);
+  const pendingConsultRef = useRef<Speaker | null>(null);
+  const isConsultingRef = useRef(false);
   callbacksRef.current = callbacks;
 
-  // Client tools that agents can call to transfer to other specialists
-  const clientTools = {
-    consult_security: async () => {
-      console.log('🔄 Agent requesting security specialist...');
-      await switchAgentRef.current?.('security');
-      return 'Transferred to security specialist';
-    },
-    consult_travel: async () => {
-      console.log('🔄 Agent requesting travel specialist...');
-      await switchAgentRef.current?.('travel');
-      return 'Transferred to travel specialist';
-    },
-    consult_researcher: async () => {
-      console.log('🔄 Agent requesting researcher...');
-      await switchAgentRef.current?.('researcher');
-      return 'Transferred to researcher';
-    },
-    consult_contacts: async () => {
-      console.log('🔄 Agent requesting contacts specialist...');
-      await switchAgentRef.current?.('contacts');
-      return 'Transferred to contacts specialist';
-    },
-    return_to_client_officer: async () => {
-      console.log('🔄 Returning to client officer...');
-      await switchAgentRef.current?.('clientOfficer');
-      return 'Returned to client officer';
-    },
-  };
+  // Detect if agent response suggests consulting another specialist
+  const detectAgentSwitch = useCallback((text: string, fromAgent: Speaker): Speaker | null => {
+    const lowerText = text.toLowerCase();
+    
+    // Only Client Officer can initiate consults
+    if (fromAgent !== 'clientOfficer') return null;
+    
+    // Check for explicit handoff phrases
+    if (lowerText.includes('let me check with') || 
+        lowerText.includes('consult') || 
+        lowerText.includes("i'll ask") ||
+        lowerText.includes('transfer you to') ||
+        lowerText.includes('speak with our')) {
+      
+      for (const [agent, keywords] of Object.entries(AGENT_TRIGGERS)) {
+        if (keywords.some(kw => lowerText.includes(kw))) {
+          return agent as Speaker;
+        }
+      }
+    }
+    
+    return null;
+  }, []);
 
   const conversation = useConversation({
-    clientTools,
     onConnect: () => {
       console.log('✅ Connected to ElevenLabs agent:', currentAgentRef.current);
       callbacksRef.current?.onAgentChange?.(currentAgentRef.current);
+      
+      // If we're consulting and have context, send it to the new agent
+      if (isConsultingRef.current && userContext) {
+        setTimeout(() => {
+          conversation.sendUserMessage(`Context from client officer: ${userContext}. Please provide your specialist assessment.`);
+        }, 500);
+      }
     },
     onDisconnect: () => {
       console.log('❌ Disconnected from ElevenLabs agent');
@@ -79,8 +91,22 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
         speaker: payload.role === 'user' ? 'user' : currentAgentRef.current
       };
       
+      // Store user context for passing to specialists
+      if (payload.role === 'user') {
+        setUserContext(payload.message);
+      }
+      
       setTranscripts(prev => [...prev, transcript]);
       callbacksRef.current?.onTranscript?.(transcript);
+      
+      // Check if Client Officer wants to consult another agent
+      if (payload.role !== 'user' && currentAgentRef.current === 'clientOfficer') {
+        const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
+        if (targetAgent && !isConsultingRef.current) {
+          console.log('🎯 Detected handoff to:', targetAgent);
+          pendingConsultRef.current = targetAgent;
+        }
+      }
     },
     onError: (error) => {
       console.error('🚨 ElevenLabs error:', error);
@@ -92,6 +118,17 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       console.log('🎤 Mode changed:', mode);
       const isSpeaking = mode === 'speaking';
       callbacksRef.current?.onSpeakingChange?.(isSpeaking, currentAgentRef.current);
+      
+      // When Client Officer stops speaking and we have a pending consult, switch
+      if (mode === 'listening' && pendingConsultRef.current && !isConsultingRef.current) {
+        const targetAgent = pendingConsultRef.current;
+        pendingConsultRef.current = null;
+        isConsultingRef.current = true;
+        
+        setTimeout(() => {
+          switchAgentRef.current?.(targetAgent, userContext);
+        }, 1000);
+      }
     },
   });
 
