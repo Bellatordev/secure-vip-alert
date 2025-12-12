@@ -19,8 +19,10 @@ const Index = () => {
     isThinking,
     selectedVoice,
     volume,
+    currentAgent,
     connect,
     disconnect,
+    switchAgent,
     activateSOS,
     startVoice,
     stopVoice,
@@ -55,7 +57,13 @@ const Index = () => {
           <div className="h-full flex flex-col lg:flex-row">
             {/* Desktop sidebar */}
             <aside className="hidden lg:block w-72 p-4 border-r border-border shrink-0">
-              <TeamPanel teamMembers={teamMembers} activeSpeaker={activeSpeaker} />
+              <TeamPanel 
+                teamMembers={teamMembers} 
+                activeSpeaker={activeSpeaker}
+                currentAgent={currentAgent}
+                onSwitchAgent={switchAgent}
+                isConnected={isConnected}
+              />
               
               <div className="mt-4 space-y-3">
                 {isPanicMode && (
