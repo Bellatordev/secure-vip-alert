@@ -7,7 +7,7 @@ export const AGENT_IDS: Record<string, string> = {
   clientOfficer: 'NUS9FibgZiq7z8SN2kAB',  // Terry
   security: '8ZkqihGoJB7jFfKGItmC',
   travel: 'tOHPvScM78PdUdowBosh',
-  researcher: '',  // Add when available
+  researcher: '4ymemKuuugML4MTq91jt',
   contacts: '',    // Add when available
 };
 
