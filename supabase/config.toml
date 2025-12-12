@@ -2,3 +2,6 @@ project_id = "oiknentlqyzksjxzrdrt"
 
 [functions.text-to-speech]
 verify_jwt = false
+
+[functions.elevenlabs-token]
+verify_jwt = false

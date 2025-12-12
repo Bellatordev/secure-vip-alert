@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { 
   SOCState, 
   Message, 
@@ -9,7 +9,7 @@ import {
   Speaker 
 } from "@/types";
 import { v4 as uuidv4 } from "@/lib/uuid";
-import { supabase } from "@/integrations/supabase/client";
+import { useElevenLabsAgent } from "./useElevenLabsAgent";
 
 const initialTeamMembers: TeamMember[] = [
   { id: 'clientOfficer', name: 'Client Officer', role: 'Primary Contact', icon: '👤', status: 'idle', color: 'officer' },
@@ -29,12 +29,53 @@ export function useSOCRoom() {
   const [activeSpeaker, setActiveSpeaker] = useState<Speaker | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   
-  // Voice settings - default to George (ElevenLabs)
+  // Voice settings
   const [selectedVoice, setSelectedVoice] = useState('JBFqnCBsd6RMkjVDRZzb');
   const [volume, setVolume] = useState(80);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   const threadId = useRef(uuidv4());
+  
+  // ElevenLabs Conversational AI
+  const elevenLabs = useElevenLabsAgent();
+  
+  // Sync ElevenLabs state with our state
+  useEffect(() => {
+    if (elevenLabs.isSpeaking) {
+      setVoiceState('speaking');
+      setActiveSpeaker('clientOfficer');
+      updateTeamMemberStatus('clientOfficer', 'speaking');
+    } else if (elevenLabs.status === 'connected') {
+      setVoiceState('idle');
+      setActiveSpeaker(null);
+      updateTeamMemberStatus('clientOfficer', 'active');
+    }
+  }, [elevenLabs.isSpeaking, elevenLabs.status]);
+  
+  // Sync transcripts to messages
+  useEffect(() => {
+    if (elevenLabs.transcripts.length > 0) {
+      const latestTranscript = elevenLabs.transcripts[elevenLabs.transcripts.length - 1];
+      const existingIds = messages.map(m => m.content);
+      
+      if (!existingIds.includes(latestTranscript.text)) {
+        const message: Message = {
+          id: uuidv4(),
+          threadId: threadId.current,
+          timestamp: new Date(),
+          speaker: latestTranscript.role === 'user' ? 'user' : 'clientOfficer',
+          content: latestTranscript.text,
+        };
+        setMessages(prev => [...prev, message]);
+      }
+    }
+  }, [elevenLabs.transcripts]);
+  
+  // Set volume when it changes
+  useEffect(() => {
+    if (elevenLabs.status === 'connected') {
+      elevenLabs.setVolume(volume);
+    }
+  }, [volume, elevenLabs.status]);
   
   const updateTeamMemberStatus = useCallback((id: Speaker, status: TeamMember['status']) => {
     setTeamMembers(prev => prev.map(member => 
@@ -54,97 +95,34 @@ export function useSOCRoom() {
     return message;
   }, []);
   
-  // Text-to-speech using ElevenLabs
-  const speakText = useCallback(async (text: string) => {
-    try {
-      setVoiceState('speaking');
-      const { data, error } = await supabase.functions.invoke('text-to-speech', {
-        body: { text, voiceId: selectedVoice },
-      });
-      
-      if (error) {
-        console.error('TTS error:', error);
-        setVoiceState('idle');
-        return;
-      }
-      
-      if (data?.audioContent) {
-        // Stop any currently playing audio
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current = null;
-        }
-        
-        const audioData = `data:audio/mpeg;base64,${data.audioContent}`;
-        const audio = new Audio(audioData);
-        audio.volume = volume / 100;
-        audioRef.current = audio;
-        
-        audio.onended = () => {
-          setVoiceState('idle');
-        };
-        
-        await audio.play();
-      } else {
-        setVoiceState('idle');
-      }
-    } catch (err) {
-      console.error('Failed to play TTS:', err);
-      setVoiceState('idle');
-    }
-  }, [selectedVoice, volume]);
-  
-  // Add message and speak it (for AI agents)
-  const addAndSpeakMessage = useCallback((speaker: Speaker, content: string) => {
-    const message = addMessage(speaker, content);
-    if (speaker !== 'user') {
-      speakText(content);
-    }
-    return message;
-  }, [addMessage, speakText]);
-  
   const connect = useCallback(async () => {
     setConnectionStatus('connecting');
     
-    // Simulate connection delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setConnectionStatus('connected');
-    updateTeamMemberStatus('clientOfficer', 'active');
-    setActiveSpeaker('clientOfficer');
-    
-    // Client Officer greeting
-    setTimeout(() => {
-      addAndSpeakMessage('clientOfficer', "Good day. I'm your Client Officer. How may I assist you today? I have my team standing by — Security, Travel, Research, and Contacts — ready to support whatever you need.");
-      setActiveSpeaker(null);
-    }, 500);
-  }, [addAndSpeakMessage, updateTeamMemberStatus]);
+    try {
+      await elevenLabs.startConversation();
+      setConnectionStatus('connected');
+      updateTeamMemberStatus('clientOfficer', 'active');
+      setActiveSpeaker('clientOfficer');
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      setConnectionStatus('disconnected');
+    }
+  }, [elevenLabs, updateTeamMemberStatus]);
   
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    await elevenLabs.stopConversation();
     setConnectionStatus('disconnected');
     setVoiceState('idle');
     setIsPanicMode(false);
     setTeamMembers(initialTeamMembers);
     setActiveSpeaker(null);
-  }, []);
+    setMessages([]);
+  }, [elevenLabs]);
   
   const activateSOS = useCallback(async () => {
     setIsPanicMode(true);
     await connect();
-    
-    // Immediate SOS response
-    setTimeout(() => {
-      updateTeamMemberStatus('security', 'active');
-      setActiveSpeaker('security');
-      addAndSpeakMessage('security', "SOS ACTIVATED. Security Specialist here. I'm assessing your situation immediately. Please share your location and any immediate threats you're aware of. Stay calm — we're here to help.");
-      
-      setTimeout(() => {
-        updateTeamMemberStatus('contacts', 'active');
-        addAndSpeakMessage('contacts', "Contact Agent standing by. I'm pulling up local emergency services, hospitals, and safe locations in your area. Ready to coordinate on your command.");
-        setActiveSpeaker(null);
-      }, 1000);
-    }, 500);
-  }, [connect, addAndSpeakMessage, updateTeamMemberStatus]);
+  }, [connect]);
   
   const startVoice = useCallback(() => {
     if (connectionStatus !== 'connected') return;
@@ -153,44 +131,17 @@ export function useSOCRoom() {
   
   const stopVoice = useCallback(() => {
     if (voiceState !== 'recording') return;
-    setVoiceState('transcribing');
-    
-    // Simulate transcription
-    setTimeout(() => {
-      setVoiceState('thinking');
-      setIsThinking(true);
-      
-      // Simulate AI response
-      setTimeout(() => {
-        setIsThinking(false);
-        // Add demo response
-        addMessage('user', "I've just arrived at my hotel in São Paulo and something feels off about this location.");
-        
-        setTimeout(() => {
-          updateTeamMemberStatus('security', 'active');
-          setActiveSpeaker('security');
-          addAndSpeakMessage('security', "Understood. Can you describe what's making you uneasy? Any suspicious individuals, unusual activity around the entrance, or concerning features of the building itself?");
-          
-          setTimeout(() => {
-            updateTeamMemberStatus('travel', 'active');
-            addAndSpeakMessage('travel', "I'm pulling up intel on your area now. What's the hotel name and address? I can cross-reference with recent security reports.");
-            setActiveSpeaker(null);
-          }, 1500);
-        }, 1000);
-      }, 2000);
-    }, 1000);
-  }, [voiceState, addMessage, addAndSpeakMessage, updateTeamMemberStatus]);
+    setVoiceState('idle');
+  }, [voiceState]);
   
   const toggleVoiceMode = useCallback(() => {
     setVoiceMode(prev => prev === 'push-to-talk' ? 'vad' : 'push-to-talk');
   }, []);
   
   const uploadImage = useCallback(async (file: File) => {
-    // In real implementation, upload to storage and send to AI
     console.log('Uploading image:', file.name);
     await new Promise(resolve => setTimeout(resolve, 1500));
     
-    // Add message with image
     const message: Message = {
       id: uuidv4(),
       threadId: threadId.current,
@@ -207,37 +158,12 @@ export function useSOCRoom() {
       }],
     };
     setMessages(prev => [...prev, message]);
-    
-    // AI response to image
-    setIsThinking(true);
-    setTimeout(() => {
-      setIsThinking(false);
-      updateTeamMemberStatus('security', 'active');
-      setActiveSpeaker('security');
-      addAndSpeakMessage('security', "I'm analyzing the image you've shared. Give me a moment to assess any potential security concerns...");
-      setActiveSpeaker(null);
-    }, 2000);
-  }, [addAndSpeakMessage, updateTeamMemberStatus]);
+  }, []);
   
   const sendTextMessage = useCallback((text: string) => {
     if (connectionStatus !== 'connected') return;
-    
     addMessage('user', text);
-    setIsThinking(true);
-    
-    // Simulate AI response
-    setTimeout(() => {
-      setIsThinking(false);
-      setActiveSpeaker('clientOfficer');
-      updateTeamMemberStatus('clientOfficer', 'speaking');
-      addAndSpeakMessage('clientOfficer', "I've noted your concern. Let me coordinate with the appropriate specialist to address this for you.");
-      
-      setTimeout(() => {
-        updateTeamMemberStatus('clientOfficer', 'active');
-        setActiveSpeaker(null);
-      }, 500);
-    }, 1500);
-  }, [connectionStatus, addMessage, addAndSpeakMessage, updateTeamMemberStatus]);
+  }, [connectionStatus, addMessage]);
   
   return {
     // State
