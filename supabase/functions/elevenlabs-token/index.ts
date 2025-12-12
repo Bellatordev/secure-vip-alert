@@ -21,7 +21,8 @@ serve(async (req) => {
     if (!rawKey) {
       throw new Error('ELEVENLABS_API_KEY is not configured');
     }
-    const ELEVENLABS_API_KEY = rawKey.trim();
+    // Sanitize the key - remove non-ASCII characters and whitespace
+    const ELEVENLABS_API_KEY = rawKey.trim().replace(/[^\x20-\x7E]/g, '');
 
     console.log(`Getting conversation token for agent: ${agentId}`);
 
