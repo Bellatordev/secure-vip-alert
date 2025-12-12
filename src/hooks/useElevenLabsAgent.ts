@@ -3,14 +3,19 @@ import { useState, useCallback, useRef } from 'react';
 import { Speaker } from '@/types';
 import { queryResearch } from '@/lib/api/research';
 
+// Default agent ID - set via environment variable or use placeholder
+// To configure: Add VITE_ELEVENLABS_AGENT_ID to your .env file
+const DEFAULT_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
+
 // Map team roles to ElevenLabs agent IDs
+// For now, all roles use the same agent until individual agents are configured
 export const AGENT_IDS: Record<string, string> = {
-  clientOfficer: 'x43vqxXqaXG0NjZG6u0B',
-  security: '8ZkqihGoJB7jFfKGItmC',
-  travel: 'tOHPvScM78PdUdowBosh',
-  researcher: '4ymemKuuugML4MTq91jt',
-  contacts: 'sfaMjWKoJwWVh87EqeLn',
-  medical: 'kxrAePUgdKTckPMBgdQX',
+  clientOfficer: DEFAULT_AGENT_ID,
+  security: DEFAULT_AGENT_ID,
+  travel: DEFAULT_AGENT_ID,
+  researcher: DEFAULT_AGENT_ID,
+  contacts: DEFAULT_AGENT_ID,
+  medical: DEFAULT_AGENT_ID,
 };
 
 // Keywords that trigger agent switches
@@ -287,8 +292,8 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     const agentId = AGENT_IDS[agentRole];
     
     if (!agentId) {
-      console.error(`No agent ID configured for role: ${agentRole}`);
-      throw new Error(`No agent ID configured for role: ${agentRole}`);
+      console.error(`No agent ID configured. Please set VITE_ELEVENLABS_AGENT_ID in your environment.`);
+      throw new Error('No ElevenLabs agent ID configured. Please add VITE_ELEVENLABS_AGENT_ID to your environment variables with your agent ID from ElevenLabs dashboard.');
     }
 
     // Clear conversation history for new session
