@@ -6,7 +6,7 @@ import { Speaker } from '@/types';
 export const AGENT_IDS: Record<string, string> = {
   clientOfficer: 'NUS9FibgZiq7z8SN2kAB',  // Terry
   security: '8ZkqihGoJB7jFfKGItmC',
-  travel: '',      // Add when available
+  travel: 'tOHPvScM78PdUdowBosh',
   researcher: '',  // Add when available
   contacts: '',    // Add when available
 };
