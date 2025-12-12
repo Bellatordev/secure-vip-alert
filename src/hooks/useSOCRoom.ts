@@ -8,7 +8,7 @@ import {
   Speaker 
 } from "@/types";
 import { v4 as uuidv4 } from "@/lib/uuid";
-import { useElevenLabsAgent, AGENT_IDS } from "./useElevenLabsAgent";
+import { useElevenLabsAgent, AGENT_IDS, ConversationTranscript } from "./useElevenLabsAgent";
 
 const initialTeamMembers: TeamMember[] = [
   { id: 'clientOfficer', name: 'Client Officer', role: 'Primary Contact', icon: '👤', status: 'idle', color: 'officer' },
@@ -33,56 +33,78 @@ export function useSOCRoom() {
   const [volume, setVolume] = useState(80);
   
   const threadId = useRef(uuidv4());
-  
-  // ElevenLabs Conversational AI
-  const elevenLabs = useElevenLabsAgent();
-  
-  // Sync ElevenLabs state with our state
-  useEffect(() => {
-    const currentAgent = elevenLabs.currentAgent;
-    
-    if (elevenLabs.isSpeaking) {
-      setVoiceState('speaking');
-      setActiveSpeaker(currentAgent);
-      updateTeamMemberStatus(currentAgent, 'speaking');
-    } else if (elevenLabs.status === 'connected') {
-      setVoiceState('idle');
-      setActiveSpeaker(null);
-      updateTeamMemberStatus(currentAgent, 'active');
-    }
-  }, [elevenLabs.isSpeaking, elevenLabs.status, elevenLabs.currentAgent]);
-  
-  // Sync transcripts to messages
-  useEffect(() => {
-    if (elevenLabs.transcripts.length > 0) {
-      const latestTranscript = elevenLabs.transcripts[elevenLabs.transcripts.length - 1];
-      const existingContents = messages.map(m => m.content);
-      
-      if (!existingContents.includes(latestTranscript.text)) {
-        const message: Message = {
-          id: uuidv4(),
-          threadId: threadId.current,
-          timestamp: new Date(),
-          speaker: latestTranscript.speaker || (latestTranscript.role === 'user' ? 'user' : elevenLabs.currentAgent),
-          content: latestTranscript.text,
-        };
-        setMessages(prev => [...prev, message]);
-      }
-    }
-  }, [elevenLabs.transcripts, elevenLabs.currentAgent]);
-  
-  // Set volume when it changes
-  useEffect(() => {
-    if (elevenLabs.status === 'connected') {
-      elevenLabs.setVolume(volume);
-    }
-  }, [volume, elevenLabs.status]);
+  const processedTranscripts = useRef<Set<string>>(new Set());
   
   const updateTeamMemberStatus = useCallback((id: Speaker, status: TeamMember['status']) => {
     setTeamMembers(prev => prev.map(member => 
       member.id === id ? { ...member, status } : member
     ));
   }, []);
+  
+  // Handle transcript updates from the agent
+  const handleTranscript = useCallback((transcript: ConversationTranscript) => {
+    const transcriptKey = `${transcript.speaker}-${transcript.text}`;
+    
+    if (processedTranscripts.current.has(transcriptKey)) {
+      return;
+    }
+    processedTranscripts.current.add(transcriptKey);
+    
+    const message: Message = {
+      id: uuidv4(),
+      threadId: threadId.current,
+      timestamp: new Date(),
+      speaker: transcript.speaker || (transcript.role === 'user' ? 'user' : 'clientOfficer'),
+      content: transcript.text,
+    };
+    setMessages(prev => [...prev, message]);
+  }, []);
+  
+  // Handle speaking state changes
+  const handleSpeakingChange = useCallback((isSpeaking: boolean, agent: Speaker) => {
+    if (isSpeaking) {
+      setVoiceState('speaking');
+      setActiveSpeaker(agent);
+      updateTeamMemberStatus(agent, 'speaking');
+    } else {
+      setVoiceState('idle');
+      updateTeamMemberStatus(agent, 'active');
+    }
+  }, [updateTeamMemberStatus]);
+  
+  // Handle agent changes
+  const handleAgentChange = useCallback((agent: Speaker) => {
+    // Reset all team members to idle except the new active one
+    setTeamMembers(prev => prev.map(member => ({
+      ...member,
+      status: member.id === agent ? 'active' : (AGENT_IDS[member.id] ? 'idle' : member.status)
+    })));
+    setActiveSpeaker(agent);
+  }, []);
+  
+  // ElevenLabs Conversational AI with callbacks
+  const elevenLabs = useElevenLabsAgent({
+    onTranscript: handleTranscript,
+    onSpeakingChange: handleSpeakingChange,
+    onAgentChange: handleAgentChange,
+  });
+  
+  // Sync connection status
+  useEffect(() => {
+    if (elevenLabs.status === 'connected' && connectionStatus !== 'connected') {
+      setConnectionStatus('connected');
+    } else if (elevenLabs.status === 'disconnected' && connectionStatus === 'connected') {
+      // Only set to disconnected if we were previously connected
+      // This prevents premature disconnection during agent switching
+    }
+  }, [elevenLabs.status, connectionStatus]);
+  
+  // Set volume when it changes
+  useEffect(() => {
+    if (elevenLabs.status === 'connected') {
+      elevenLabs.setVolume(volume);
+    }
+  }, [volume, elevenLabs.status, elevenLabs.setVolume]);
   
   const addMessage = useCallback((speaker: Speaker, content: string) => {
     const message: Message = {
@@ -97,10 +119,10 @@ export function useSOCRoom() {
   }, []);
   
   const connect = useCallback(async (agentRole?: Speaker | React.MouseEvent) => {
-    // Handle case where this is called from a button click (event passed) or directly
     const role: Speaker = (typeof agentRole === 'string') ? agentRole : 'clientOfficer';
     
     setConnectionStatus('connecting');
+    processedTranscripts.current.clear();
     
     try {
       await elevenLabs.startConversation(role);
@@ -119,15 +141,19 @@ export function useSOCRoom() {
       return;
     }
     
-    // Update UI to show switching
+    // Show visual feedback during switch
+    setIsThinking(true);
     updateTeamMemberStatus(elevenLabs.currentAgent, 'idle');
-    setActiveSpeaker(agentRole);
-    updateTeamMemberStatus(agentRole, 'active');
+    updateTeamMemberStatus(agentRole, 'tasked');
     
     try {
       await elevenLabs.switchAgent(agentRole);
+      updateTeamMemberStatus(agentRole, 'active');
+      setActiveSpeaker(agentRole);
     } catch (error) {
       console.error('Failed to switch agent:', error);
+    } finally {
+      setIsThinking(false);
     }
   }, [elevenLabs, updateTeamMemberStatus]);
   
@@ -139,11 +165,11 @@ export function useSOCRoom() {
     setTeamMembers(initialTeamMembers);
     setActiveSpeaker(null);
     setMessages([]);
+    processedTranscripts.current.clear();
   }, [elevenLabs]);
   
   const activateSOS = useCallback(async () => {
     setIsPanicMode(true);
-    // Connect to security agent for SOS
     await connect('security');
   }, [connect]);
   
@@ -186,7 +212,9 @@ export function useSOCRoom() {
   const sendTextMessage = useCallback((text: string) => {
     if (connectionStatus !== 'connected') return;
     addMessage('user', text);
-  }, [connectionStatus, addMessage]);
+    // Also send to the current agent
+    elevenLabs.sendMessage(text);
+  }, [connectionStatus, addMessage, elevenLabs]);
   
   // Get available agents (those with configured IDs)
   const availableAgents = teamMembers.filter(member => 
