@@ -9,6 +9,7 @@ import {
   Speaker 
 } from "@/types";
 import { v4 as uuidv4 } from "@/lib/uuid";
+import { supabase } from "@/integrations/supabase/client";
 
 const initialTeamMembers: TeamMember[] = [
   { id: 'clientOfficer', name: 'Client Officer', role: 'Primary Contact', icon: '👤', status: 'idle', color: 'officer' },
@@ -28,9 +29,10 @@ export function useSOCRoom() {
   const [activeSpeaker, setActiveSpeaker] = useState<Speaker | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   
-  // Voice settings
-  const [selectedVoice, setSelectedVoice] = useState('alloy');
+  // Voice settings - default to George (ElevenLabs)
+  const [selectedVoice, setSelectedVoice] = useState('JBFqnCBsd6RMkjVDRZzb');
   const [volume, setVolume] = useState(80);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   const threadId = useRef(uuidv4());
   
@@ -52,6 +54,55 @@ export function useSOCRoom() {
     return message;
   }, []);
   
+  // Text-to-speech using ElevenLabs
+  const speakText = useCallback(async (text: string) => {
+    try {
+      setVoiceState('speaking');
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: { text, voiceId: selectedVoice },
+      });
+      
+      if (error) {
+        console.error('TTS error:', error);
+        setVoiceState('idle');
+        return;
+      }
+      
+      if (data?.audioContent) {
+        // Stop any currently playing audio
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+        }
+        
+        const audioData = `data:audio/mpeg;base64,${data.audioContent}`;
+        const audio = new Audio(audioData);
+        audio.volume = volume / 100;
+        audioRef.current = audio;
+        
+        audio.onended = () => {
+          setVoiceState('idle');
+        };
+        
+        await audio.play();
+      } else {
+        setVoiceState('idle');
+      }
+    } catch (err) {
+      console.error('Failed to play TTS:', err);
+      setVoiceState('idle');
+    }
+  }, [selectedVoice, volume]);
+  
+  // Add message and speak it (for AI agents)
+  const addAndSpeakMessage = useCallback((speaker: Speaker, content: string) => {
+    const message = addMessage(speaker, content);
+    if (speaker !== 'user') {
+      speakText(content);
+    }
+    return message;
+  }, [addMessage, speakText]);
+  
   const connect = useCallback(async () => {
     setConnectionStatus('connecting');
     
@@ -64,10 +115,10 @@ export function useSOCRoom() {
     
     // Client Officer greeting
     setTimeout(() => {
-      addMessage('clientOfficer', "Good day. I'm your Client Officer. How may I assist you today? I have my team standing by — Security, Travel, Research, and Contacts — ready to support whatever you need.");
+      addAndSpeakMessage('clientOfficer', "Good day. I'm your Client Officer. How may I assist you today? I have my team standing by — Security, Travel, Research, and Contacts — ready to support whatever you need.");
       setActiveSpeaker(null);
     }, 500);
-  }, [addMessage, updateTeamMemberStatus]);
+  }, [addAndSpeakMessage, updateTeamMemberStatus]);
   
   const disconnect = useCallback(() => {
     setConnectionStatus('disconnected');
@@ -85,15 +136,15 @@ export function useSOCRoom() {
     setTimeout(() => {
       updateTeamMemberStatus('security', 'active');
       setActiveSpeaker('security');
-      addMessage('security', "SOS ACTIVATED. Security Specialist here. I'm assessing your situation immediately. Please share your location and any immediate threats you're aware of. Stay calm — we're here to help.");
+      addAndSpeakMessage('security', "SOS ACTIVATED. Security Specialist here. I'm assessing your situation immediately. Please share your location and any immediate threats you're aware of. Stay calm — we're here to help.");
       
       setTimeout(() => {
         updateTeamMemberStatus('contacts', 'active');
-        addMessage('contacts', "Contact Agent standing by. I'm pulling up local emergency services, hospitals, and safe locations in your area. Ready to coordinate on your command.");
+        addAndSpeakMessage('contacts', "Contact Agent standing by. I'm pulling up local emergency services, hospitals, and safe locations in your area. Ready to coordinate on your command.");
         setActiveSpeaker(null);
       }, 1000);
     }, 500);
-  }, [connect, addMessage, updateTeamMemberStatus]);
+  }, [connect, addAndSpeakMessage, updateTeamMemberStatus]);
   
   const startVoice = useCallback(() => {
     if (connectionStatus !== 'connected') return;
@@ -112,25 +163,23 @@ export function useSOCRoom() {
       // Simulate AI response
       setTimeout(() => {
         setIsThinking(false);
-        setVoiceState('speaking');
         // Add demo response
         addMessage('user', "I've just arrived at my hotel in São Paulo and something feels off about this location.");
         
         setTimeout(() => {
           updateTeamMemberStatus('security', 'active');
           setActiveSpeaker('security');
-          addMessage('security', "Understood. Can you describe what's making you uneasy? Any suspicious individuals, unusual activity around the entrance, or concerning features of the building itself?");
+          addAndSpeakMessage('security', "Understood. Can you describe what's making you uneasy? Any suspicious individuals, unusual activity around the entrance, or concerning features of the building itself?");
           
           setTimeout(() => {
             updateTeamMemberStatus('travel', 'active');
-            addMessage('travel', "I'm pulling up intel on your area now. What's the hotel name and address? I can cross-reference with recent security reports.");
+            addAndSpeakMessage('travel', "I'm pulling up intel on your area now. What's the hotel name and address? I can cross-reference with recent security reports.");
             setActiveSpeaker(null);
-            setVoiceState('idle');
           }, 1500);
         }, 1000);
       }, 2000);
     }, 1000);
-  }, [voiceState, addMessage, updateTeamMemberStatus]);
+  }, [voiceState, addMessage, addAndSpeakMessage, updateTeamMemberStatus]);
   
   const toggleVoiceMode = useCallback(() => {
     setVoiceMode(prev => prev === 'push-to-talk' ? 'vad' : 'push-to-talk');
@@ -165,10 +214,10 @@ export function useSOCRoom() {
       setIsThinking(false);
       updateTeamMemberStatus('security', 'active');
       setActiveSpeaker('security');
-      addMessage('security', "I'm analyzing the image you've shared. Give me a moment to assess any potential security concerns...");
+      addAndSpeakMessage('security', "I'm analyzing the image you've shared. Give me a moment to assess any potential security concerns...");
       setActiveSpeaker(null);
     }, 2000);
-  }, [addMessage, updateTeamMemberStatus]);
+  }, [addAndSpeakMessage, updateTeamMemberStatus]);
   
   const sendTextMessage = useCallback((text: string) => {
     if (connectionStatus !== 'connected') return;
@@ -181,14 +230,14 @@ export function useSOCRoom() {
       setIsThinking(false);
       setActiveSpeaker('clientOfficer');
       updateTeamMemberStatus('clientOfficer', 'speaking');
-      addMessage('clientOfficer', "I've noted your concern. Let me coordinate with the appropriate specialist to address this for you.");
+      addAndSpeakMessage('clientOfficer', "I've noted your concern. Let me coordinate with the appropriate specialist to address this for you.");
       
       setTimeout(() => {
         updateTeamMemberStatus('clientOfficer', 'active');
         setActiveSpeaker(null);
       }, 500);
     }, 1500);
-  }, [connectionStatus, addMessage, updateTeamMemberStatus]);
+  }, [connectionStatus, addMessage, addAndSpeakMessage, updateTeamMemberStatus]);
   
   return {
     // State
