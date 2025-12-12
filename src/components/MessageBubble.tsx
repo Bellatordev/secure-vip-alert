@@ -1,4 +1,4 @@
-import { Shield, Globe, Search, Phone, User } from "lucide-react";
+import { Shield, Globe, Search, Phone, User, Heart } from "lucide-react";
 import { Message, Speaker } from "@/types";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -37,6 +37,11 @@ const speakerInfo: Record<Speaker, { name: string; icon: React.ReactNode; colorC
     name: "Contact Agent",
     icon: <Phone className="w-4 h-4" />,
     colorClass: "bg-team-contacts/10 text-team-contacts border-team-contacts/30",
+  },
+  medical: {
+    name: "Medical",
+    icon: <Heart className="w-4 h-4" />,
+    colorClass: "bg-team-medical/10 text-team-medical border-team-medical/30",
   },
 };
 

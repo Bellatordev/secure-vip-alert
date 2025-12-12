@@ -10,6 +10,7 @@ export const AGENT_IDS: Record<string, string> = {
   travel: 'tOHPvScM78PdUdowBosh',
   researcher: '4ymemKuuugML4MTq91jt',
   contacts: 'sfaMjWKoJwWVh87EqeLn',
+  medical: 'kxrAePUgdKTckPMBgdQX',
 };
 
 // Keywords that trigger agent switches
@@ -18,6 +19,7 @@ const AGENT_TRIGGERS: Record<string, string[]> = {
   travel: ['travel', 'evacuation', 'transport', 'route', 'flight', 'location', 'embassy', 'leave'],
   researcher: ['research', 'background', 'intel', 'intelligence', 'history', 'analyze', 'information'],
   contacts: ['contact', 'embassy', 'authorities', 'emergency', 'call', 'reach', 'help'],
+  medical: ['medical', 'health', 'doctor', 'hospital', 'injury', 'sick', 'medicine', 'first aid', 'ambulance', 'treatment'],
 };
 
 // Phrases that indicate uncertainty - trigger multi-agent consultation

@@ -75,6 +75,7 @@ export default {
           researcher: "hsl(var(--team-researcher))",
           contacts: "hsl(var(--team-contacts))",
           officer: "hsl(var(--team-officer))",
+          medical: "hsl(var(--team-medical))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

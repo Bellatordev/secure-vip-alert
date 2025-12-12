@@ -1,4 +1,4 @@
-import { Shield, Globe, Search, Phone, User } from "lucide-react";
+import { Shield, Globe, Search, Phone, User, Heart } from "lucide-react";
 import { TeamMember, TeamMemberStatus, Speaker } from "@/types";
 import { cn } from "@/lib/utils";
 import { AGENT_IDS } from "@/hooks/useElevenLabsAgent";
@@ -17,6 +17,7 @@ const iconMap: Record<string, React.ReactNode> = {
   travel: <Globe className="w-4 h-4" />,
   researcher: <Search className="w-4 h-4" />,
   contacts: <Phone className="w-4 h-4" />,
+  medical: <Heart className="w-4 h-4" />,
 };
 
 const colorMap: Record<string, string> = {
@@ -25,6 +26,7 @@ const colorMap: Record<string, string> = {
   travel: "text-team-travel bg-team-travel/10 border-team-travel/30",
   researcher: "text-team-researcher bg-team-researcher/10 border-team-researcher/30",
   contacts: "text-team-contacts bg-team-contacts/10 border-team-contacts/30",
+  medical: "text-team-medical bg-team-medical/10 border-team-medical/30",
 };
 
 const statusColors: Record<TeamMemberStatus, string> = {

@@ -4,7 +4,8 @@ export type Speaker =
   | 'security' 
   | 'travel' 
   | 'researcher' 
-  | 'contacts';
+  | 'contacts'
+  | 'medical';
 
 export type TeamMemberStatus = 'idle' | 'tasked' | 'active' | 'speaking';
 
