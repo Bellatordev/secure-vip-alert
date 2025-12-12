@@ -18,10 +18,12 @@ serve(async (req) => {
       throw new Error('Text is required');
     }
 
-    const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-    if (!ELEVENLABS_API_KEY) {
+    const rawKey = Deno.env.get('ELEVENLABS_API_KEY');
+    if (!rawKey) {
       throw new Error('ELEVENLABS_API_KEY is not configured');
     }
+    // Trim whitespace and remove any non-ASCII characters that could cause ByteString errors
+    const ELEVENLABS_API_KEY = rawKey.trim().replace(/[^\x00-\x7F]/g, '');
 
     // Default to "George" voice if not specified
     const selectedVoiceId = voiceId || 'JBFqnCBsd6RMkjVDRZzb';
