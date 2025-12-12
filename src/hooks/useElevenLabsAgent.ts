@@ -1,6 +1,7 @@
 import { useConversation } from '@elevenlabs/react';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Speaker } from '@/types';
+import { queryResearch } from '@/lib/api/research';
 
 // Map team roles to ElevenLabs agent IDs
 export const AGENT_IDS: Record<string, string> = {
@@ -13,11 +14,24 @@ export const AGENT_IDS: Record<string, string> = {
 
 // Keywords that trigger agent switches
 const AGENT_TRIGGERS: Record<string, string[]> = {
-  security: ['security', 'threat', 'danger', 'risk', 'attack', 'breach', 'cyber'],
-  travel: ['travel', 'evacuation', 'transport', 'route', 'flight', 'location', 'embassy'],
-  researcher: ['research', 'background', 'intel', 'intelligence', 'history', 'analyze'],
-  contacts: ['contact', 'embassy', 'authorities', 'emergency', 'call', 'reach'],
+  security: ['security', 'threat', 'danger', 'risk', 'attack', 'breach', 'cyber', 'safe'],
+  travel: ['travel', 'evacuation', 'transport', 'route', 'flight', 'location', 'embassy', 'leave'],
+  researcher: ['research', 'background', 'intel', 'intelligence', 'history', 'analyze', 'information'],
+  contacts: ['contact', 'embassy', 'authorities', 'emergency', 'call', 'reach', 'help'],
 };
+
+// Phrases that indicate uncertainty - trigger multi-agent consultation
+const UNCERTAINTY_PHRASES = [
+  "i'm not sure",
+  "i don't know",
+  "let me find out",
+  "unclear",
+  "need more information",
+  "complex situation",
+  "difficult to say",
+  "let me consult",
+  "get the team's input",
+];
 
 export type ConversationTranscript = {
   role: 'user' | 'agent';
@@ -29,6 +43,8 @@ export type AgentCallbacks = {
   onAgentChange?: (agent: Speaker) => void;
   onTranscript?: (transcript: ConversationTranscript) => void;
   onSpeakingChange?: (isSpeaking: boolean, agent: Speaker) => void;
+  onResearchStarted?: () => void;
+  onResearchComplete?: (research: string) => void;
 };
 
 export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
@@ -36,12 +52,20 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
   const [transcripts, setTranscripts] = useState<ConversationTranscript[]>([]);
   const [currentAgent, setCurrentAgent] = useState<Speaker>('clientOfficer');
   const [userContext, setUserContext] = useState<string>('');
+  const [isResearching, setIsResearching] = useState(false);
   const currentAgentRef = useRef<Speaker>('clientOfficer');
   const callbacksRef = useRef(callbacks);
   const switchAgentRef = useRef<((agent: Speaker, context?: string) => Promise<string | undefined>) | null>(null);
   const pendingConsultRef = useRef<Speaker | null>(null);
   const isConsultingRef = useRef(false);
+  const consultQueueRef = useRef<Speaker[]>([]);
   callbacksRef.current = callbacks;
+
+  // Detect uncertainty and need for multi-agent consultation
+  const detectUncertainty = useCallback((text: string): boolean => {
+    const lowerText = text.toLowerCase();
+    return UNCERTAINTY_PHRASES.some(phrase => lowerText.includes(phrase));
+  }, []);
 
   // Detect if agent response suggests consulting another specialist
   const detectAgentSwitch = useCallback((text: string, fromAgent: Speaker): Speaker | null => {
@@ -65,6 +89,29 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
     }
     
     return null;
+  }, []);
+
+  // Perform web research for the researcher agent
+  const performResearch = useCallback(async (query: string): Promise<string> => {
+    setIsResearching(true);
+    callbacksRef.current?.onResearchStarted?.();
+    
+    try {
+      const research = await queryResearch(query, userContext);
+      callbacksRef.current?.onResearchComplete?.(research);
+      return research;
+    } finally {
+      setIsResearching(false);
+    }
+  }, [userContext]);
+
+  // Queue multiple agents for consultation (researcher + security when uncertain)
+  const queueMultiAgentConsult = useCallback((agents: Speaker[]) => {
+    consultQueueRef.current = [...agents];
+    if (consultQueueRef.current.length > 0 && !isConsultingRef.current) {
+      const nextAgent = consultQueueRef.current.shift()!;
+      pendingConsultRef.current = nextAgent;
+    }
   }, []);
 
   const conversation = useConversation({
@@ -99,12 +146,38 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       setTranscripts(prev => [...prev, transcript]);
       callbacksRef.current?.onTranscript?.(transcript);
       
-      // Check if Client Officer wants to consult another agent
+      // Check if Client Officer wants to consult another agent or is uncertain
       if (payload.role !== 'user' && currentAgentRef.current === 'clientOfficer') {
-        const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
-        if (targetAgent && !isConsultingRef.current) {
-          console.log('🎯 Detected handoff to:', targetAgent);
-          pendingConsultRef.current = targetAgent;
+        const isUncertain = detectUncertainty(payload.message);
+        
+        if (isUncertain && !isConsultingRef.current) {
+          // When uncertain, consult both researcher and security
+          console.log('🤔 Client Officer uncertain - consulting researcher and security');
+          queueMultiAgentConsult(['researcher', 'security']);
+          
+          // First, do web research
+          performResearch(userContext).then(research => {
+            console.log('📚 Research completed:', research.substring(0, 100) + '...');
+          });
+        } else {
+          const targetAgent = detectAgentSwitch(payload.message, currentAgentRef.current);
+          if (targetAgent && !isConsultingRef.current) {
+            console.log('🎯 Detected handoff to:', targetAgent);
+            pendingConsultRef.current = targetAgent;
+          }
+        }
+      }
+      
+      // If a specialist finishes and there are more in queue, continue
+      if (payload.role !== 'user' && currentAgentRef.current !== 'clientOfficer' && isConsultingRef.current) {
+        if (consultQueueRef.current.length > 0) {
+          const nextAgent = consultQueueRef.current.shift()!;
+          console.log('➡️ Moving to next specialist:', nextAgent);
+          pendingConsultRef.current = nextAgent;
+        } else {
+          // All specialists done, return to client officer
+          console.log('✅ All specialists consulted, returning to Client Officer');
+          pendingConsultRef.current = 'clientOfficer';
         }
       }
     },
@@ -119,14 +192,20 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
       const isSpeaking = mode === 'speaking';
       callbacksRef.current?.onSpeakingChange?.(isSpeaking, currentAgentRef.current);
       
-      // When Client Officer stops speaking and we have a pending consult, switch
-      if (mode === 'listening' && pendingConsultRef.current && !isConsultingRef.current) {
+      // When agent stops speaking and we have a pending consult, switch
+      if (mode === 'listening' && pendingConsultRef.current) {
         const targetAgent = pendingConsultRef.current;
         pendingConsultRef.current = null;
-        isConsultingRef.current = true;
+        
+        // Reset consulting flag if returning to client officer
+        if (targetAgent === 'clientOfficer') {
+          isConsultingRef.current = false;
+        } else {
+          isConsultingRef.current = true;
+        }
         
         setTimeout(() => {
-          switchAgentRef.current?.(targetAgent, userContext);
+          switchAgentRef.current?.(targetAgent);
         }, 1000);
       }
     },
