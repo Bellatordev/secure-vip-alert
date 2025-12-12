@@ -200,9 +200,11 @@ export function useElevenLabsAgent(callbacks?: AgentCallbacks) {
         }
         
         // Start research in background
-        performResearch(userQueryRef.current).then(research => {
-          console.log('📚 Research completed:', research.substring(0, 100) + '...');
-        });
+        if (userQueryRef.current) {
+          performResearch(userQueryRef.current).then(research => {
+            console.log('📚 Research completed:', research.substring(0, 100) + '...');
+          });
+        }
       }
       
       // Check if other specialists should chime in based on new information
